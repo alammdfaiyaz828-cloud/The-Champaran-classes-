@@ -1,0 +1,124 @@
+name: Build Debug APK & Publish Release
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      create_release:
+        description: 'Publish a GitHub Release'
+        required: false
+        type: boolean
+        default: true
+      release_tag:
+        description: 'Release tag (e.g. v1.0.0)'
+        required: false
+        type: string
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build & Release Debug APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Prepare Keystore & Environment
+        run: |
+          touch .env
+          if [ -f debug.keystore.base64 ]; then
+            base64 -d debug.keystore.base64 > debug.keystore
+          else
+            keytool -genkey -v -keystore debug.keystore -storepass android \
+              -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 \
+              -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+          fi
+          chmod +x gradlew
+
+      - name: Run Unit Tests
+        run: ./gradlew testDebugUnitTest --no-daemon
+
+      - name: Build Debug APK
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Prepare APK Artifact
+        id: prepare_apk
+        run: |
+          APK_SRC="app/build/outputs/apk/debug/app-debug.apk"
+          APK_DEST="TheChamparanClasses-debug.apk"
+          if [ -f "$APK_SRC" ]; then
+            cp "$APK_SRC" "$APK_DEST"
+            echo "apk_path=$APK_DEST" >> $GITHUB_OUTPUT
+            echo "apk_exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "ERROR: $APK_SRC not found!"
+            exit 1
+          fi
+
+      - name: Upload Debug APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: TheChamparanClasses-debug-apk
+          path: ${{ steps.prepare_apk.outputs.apk_path }}
+          retention-days: 30
+
+      - name: Determine Release Tag
+        id: release_info
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ inputs.release_tag }}" ]; then
+            TAG="${{ inputs.release_tag }}"
+          elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            TAG="${GITHUB_REF#refs/tags/}"
+          else
+            TAG="v1.0.$(date +'%Y%m%d%H%M')"
+          fi
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && inputs.create_release)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.release_info.outputs.tag }}
+          name: The Champaran Classes ${{ steps.release_info.outputs.tag }}
+          body: |
+            ## The Champaran Classes (द चंपारण क्लासेज / دی چمپارن کلاسز)
+            *Tagline: Learn Today, Lead Tomorrow*
+            
+            ### Included in this build:
+            - **Bihar Board Class 10th (Matric)** complete curriculum
+            - **Bihar Board Class 11th Arts & 12th Arts** batches
+            - Bilingual support: **Hindi & Urdu** (with native **RTL layout**)
+            - Interactive Live Classes & Live Chat
+            - Recorded Video Lectures with playback speed (0.75x - 2.0x) & progress resume
+            - Chapter-wise PDF Study Notes with in-app reader & offline download
+            - Timed MCQ Online Test Series with instant scorecards & solutions
+            - Razorpay-compliant online course enrollment
+            - Student, Teacher, and Admin management panels
+            
+            Download and install `TheChamparanClasses-debug.apk` below.
+          files: |
+            ${{ steps.prepare_apk.outputs.apk_path }}
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
