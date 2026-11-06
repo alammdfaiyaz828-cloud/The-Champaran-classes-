@@ -1,0 +1,8 @@
+{
+  "name": "The Champaran Classes",
+  "description": "Online education platform for Bihar Board Class 10th, 11th & 12th Arts with live interactive classes, recorded lectures, bilingual Hindi & Urdu PDF notes, online test series, and student & admin panels.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
